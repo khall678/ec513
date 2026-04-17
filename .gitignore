@@ -1,0 +1,5 @@
+# Package only the deliverable bundle under test_files/.
+/*
+!/.gitignore
+!/test_files/
+!/test_files/**

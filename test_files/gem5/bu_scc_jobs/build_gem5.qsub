@@ -1,0 +1,18 @@
+#!/bin/bash -l
+#$ -cwd
+#$ -V
+#$ -j y
+#$ -P ec513
+#$ -N gem5_build_camp
+#$ -o logs/gem5_build.$JOB_ID.log
+#$ -pe omp 8
+#$ -l h_rt=12:00:00
+
+set -euo pipefail
+
+PROJECT_ROOT="/projectnb/ec513/students/willjdes/labs/spec-2017"
+GEM5_ROOT="/projectnb/ec513/students/willjdes/labs/spec-2017/gem5"
+
+source "$PROJECT_ROOT/sourceme"
+cd "$GEM5_ROOT"
+scons build/X86/gem5.opt -j 8
