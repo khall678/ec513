@@ -69,7 +69,8 @@ namespace gem5
 
       bool mpp_prediction = MultiperspectivePerceptron8KB::lookup(tid, branch_addr, bp_history);
 
-      // Next, look up branch in bimodal table
+      // Next, look up branch in bimodal table. Take mem address and hash it to find specific count
+      //on SRAM table
       unsigned filter_idx = getFilterIndex(branch_addr);
       uint8_t counter_val = confidenceCtrs[filter_idx];
 

@@ -336,13 +336,13 @@ def handle_exit():
     print("Done booting Linux")
     print("Resetting stats at the start of ROI!")
     m5.stats.reset()
-    # processor.switch()
+    processor.switch()
         # We use the standard string "m5_exit instruction encountered" to avoid 
     # the NotImplementedError in the simulator.
-    print("Scheduling Warmup Stop (4 billion insts)...")
-    processor.get_cores()[0].core.scheduleInstStop(0, 4000000000, "m5_exit instruction encountered")
+    print("Scheduling Warmup Stop (10M insts)...")
+    processor.get_cores()[0].core.scheduleInstStop(0, 10000000, "m5_exit instruction encountered")
     yield False  # Yield control back to the simulator
-    processor.switch()
+    #processor.switch()
     # Below is another method to limit the execution time of the simulation. 
     # m5.scheduleTickExitFromCurrent(100000)
     print("Warmup complete. Resetting stats for Measurement!")
