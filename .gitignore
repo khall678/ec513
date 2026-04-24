@@ -1,5 +1,6 @@
 # Package only the deliverable bundle under test_files/.
 /*
 !/.gitignore
+!/README.md
 !/test_files/
 !/test_files/**
