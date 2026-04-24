@@ -1,72 +1,44 @@
 #!/usr/bin/env python3
-"""Generate BU SCC qsub files for the CAMP branch-predictor study.
+"""Generate independent BU SCC qsub files for the sample SPEC workloads.
 
-Each benchmark gets one qsub job that sweeps ALL CAMP parameters and runs
-all baseline predictors in a single job array.  Re-run this script any time
-the sweep configuration changes; it overwrites the generated files.
+This trims the directory down to the three workloads from submit_sample.sh and
+emits one qsub per individual run so SCC can schedule every point
+independently.
 """
 
 from pathlib import Path
 
-
-BENCHMARKS = [
-    "500.perlbench_r",
-    "502.gcc_r",
-    "503.bwaves_r",
-    "505.mcf_r",
-    "507.cactusBSSN_r",
-    "508.namd_r",
-    "510.parest_r",
-    "511.povray_r",
-    "519.lbm_r",
-    "520.omnetpp_r",
-    "521.wrf_r",
-    "523.xalancbmk_r",
-    "525.x264_r",
-    "527.cam4_r",
-    "531.deepsjeng_r",
-    "538.imagick_r",
-    "541.leela_r",
-    "544.nab_r",
-    "548.exchange2_r",
-    "557.xz_r",
-]
-
-# ---------------------------------------------------------------------------
-# Full parameter sweep
-# ---------------------------------------------------------------------------
-# Baselines run once each; they are independent of table-size / counter-bits.
-BASELINE_PREDICTORS = (
-    "LocalBP,"
-    "MultiperspectivePerceptron64KB,"
-    "LTAGE,"
-    "MultiperspectivePerceptronTAGE64KB,"
-    "CAMP"
-)
-
-# Each axis is swept independently; the other two are held at their defaults
-# (counterBits=2, mlpWindowStates=2, confidenceTableSize=8192) when not the
-# varied axis.  Having all three in the comma list runs the full product sweep
-# in a single job.
-CAMP_COUNTER_BITS  = "1,2,3,4"          # vary counter bits   (ws=2, cts=8192)
-CAMP_WINDOW_STATES = "1,2,4"            # vary window states  (cb=2, cts=8192)
-CONFIDENCE_TABLE_SIZES = "4096,8192,16384"   # vary table size     (cb=2, ws=2)
 
 DEFAULT_PROJECT = "ec513"
 JOBS_DIR = Path(__file__).resolve().parent
 GEM5_ROOT = JOBS_DIR.parent
 PROJECT_ROOT = GEM5_ROOT.parent
 
+SAMPLE_BENCHMARKS = [
+    "505.mcf_r",
+    "500.perlbench_r",
+    "538.imagick_r",
+]
 
-def workload_job_text(benchmark: str) -> str:
-    safe_name = benchmark.replace(".", "_")
+CONFIDENCE_TABLE_SIZE = "8192"
+LOCALBP_COUNTER_BITS = ["2", "3", "4"]
+CAMP_COUNTER_BITS = ["2", "3", "4"]
+MLP_PREDICTOR = "MultiperspectivePerceptron64KB"
+
+
+def safe_name(name: str) -> str:
+    return name.replace(".", "_")
+
+
+def qsub_text(job_name: str, log_name: str, benchmark: str, run_args: list[str]) -> str:
+    args_lines = " \\\n".join(f"  {arg}" for arg in run_args)
     return f"""#!/bin/bash -l
 #$ -cwd
 #$ -V
 #$ -j y
 #$ -P {DEFAULT_PROJECT}
-#$ -N camp_{safe_name}
-#$ -o logs/{safe_name}.$JOB_ID.log
+#$ -N {job_name}
+#$ -o logs/{log_name}.$JOB_ID.log
 #$ -pe omp 8
 #$ -l h_rt=48:00:00
 
@@ -80,129 +52,126 @@ cd "$GEM5_ROOT"
 
 ./run_project_benchmark.sh \\
   --benchmarks {benchmark} \\
-  --predictors {BASELINE_PREDICTORS} \\
-  --camp-counter-bits {CAMP_COUNTER_BITS} \\
-  --camp-window-states {CAMP_WINDOW_STATES} \\
-  --confidence-table-sizes {CONFIDENCE_TABLE_SIZES} \\
   --warmup-mode timing \\
   --warmup-insts 1000000 \\
   --measure-insts 100000000 \\
-  --size ref
+  --size ref \\
+{args_lines}
 """
 
 
-def build_job_text() -> str:
-    return f"""#!/bin/bash -l
-#$ -cwd
-#$ -V
-#$ -j y
-#$ -P ec513
-#$ -N gem5_build_camp
-#$ -o logs/gem5_build.$JOB_ID.log
-#$ -pe omp 8
-#$ -l h_rt=12:00:00
+def emit_localbp_jobs() -> list[str]:
+    files: list[str] = []
+    for benchmark in SAMPLE_BENCHMARKS:
+        bench_safe = safe_name(benchmark)
+        for counter_bits in LOCALBP_COUNTER_BITS:
+            run_tag = f"LocalBP_cb{counter_bits}_cts{CONFIDENCE_TABLE_SIZE}"
+            job_stem = f"{benchmark}.localbp_cb{counter_bits}"
+            text = qsub_text(
+                job_name=f"lbp_{bench_safe}_cb{counter_bits}",
+                log_name=f"{bench_safe}.localbp_cb{counter_bits}",
+                benchmark=benchmark,
+                run_args=[
+                    "--predictors LocalBP",
+                    f"--camp-counter-bits {counter_bits}",
+                    f"--confidence-table-sizes {CONFIDENCE_TABLE_SIZE}",
+                ],
+            )
+            path = JOBS_DIR / f"{job_stem}.qsub"
+            path.write_text(text, encoding="ascii")
+            files.append(path.name)
+    return files
+
+
+def emit_camp_jobs() -> list[str]:
+    files: list[str] = []
+    for benchmark in SAMPLE_BENCHMARKS:
+        bench_safe = safe_name(benchmark)
+        for counter_bits in CAMP_COUNTER_BITS:
+            job_stem = f"{benchmark}.camp_cb{counter_bits}"
+            text = qsub_text(
+                job_name=f"camp_{bench_safe}_c{counter_bits}",
+                log_name=f"{bench_safe}.camp_cb{counter_bits}",
+                benchmark=benchmark,
+                run_args=[
+                    "--predictors CAMP",
+                    f"--camp-counter-bits {counter_bits}",
+                    f"--confidence-table-sizes {CONFIDENCE_TABLE_SIZE}",
+                ],
+            )
+            path = JOBS_DIR / f"{job_stem}.qsub"
+            path.write_text(text, encoding="ascii")
+            files.append(path.name)
+    return files
+
+
+def emit_mlp_jobs() -> list[str]:
+    files: list[str] = []
+    for benchmark in SAMPLE_BENCHMARKS:
+        bench_safe = safe_name(benchmark)
+        job_stem = f"{benchmark}.mlp64kb"
+        text = qsub_text(
+            job_name=f"mlp_{bench_safe}",
+            log_name=f"{bench_safe}.mlp64kb",
+            benchmark=benchmark,
+            run_args=[f"--predictors {MLP_PREDICTOR}"],
+        )
+        path = JOBS_DIR / f"{job_stem}.qsub"
+        path.write_text(text, encoding="ascii")
+        files.append(path.name)
+    return files
+
+
+def submit_sample_text(job_files: list[str]) -> str:
+    quoted_jobs = "\n".join(f'  "{job}"' for job in job_files)
+    return f"""#!/usr/bin/env bash
 
 set -euo pipefail
 
-PROJECT_ROOT="{PROJECT_ROOT}"
-GEM5_ROOT="{GEM5_ROOT}"
+PROJECT="${{1:-{DEFAULT_PROJECT}}}"
 
-source "$PROJECT_ROOT/sourceme"
-cd "$GEM5_ROOT"
-scons build/X86/gem5.opt -j 8
+SCRIPT_DIR=$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)
+cd "$SCRIPT_DIR"
+
+command -v qsub >/dev/null 2>&1 || {{ echo "qsub not found in PATH" >&2; exit 1; }}
+
+SAMPLE_JOBS=(
+{quoted_jobs}
+)
+
+for job in "${{SAMPLE_JOBS[@]}}"; do
+  [[ -f "$job" ]] || {{ echo "Missing $job" >&2; exit 1; }}
+done
+
+echo "Submitting independent sample jobs under project $PROJECT..."
+echo "Benchmarks: {", ".join(SAMPLE_BENCHMARKS)}"
+echo "LocalBP: counter bits [{", ".join(LOCALBP_COUNTER_BITS)}], cts={CONFIDENCE_TABLE_SIZE}"
+echo "CAMP: counter bits [{", ".join(CAMP_COUNTER_BITS)}], cts={CONFIDENCE_TABLE_SIZE}"
+echo "MLP baseline: {MLP_PREDICTOR}"
+echo "Total jobs: {len(job_files)}"
+
+for job in "${{SAMPLE_JOBS[@]}}"; do
+  qsub -P "$PROJECT" "$job"
+done
 """
 
 
-def submit_all_text() -> str:
-    lines = [
-        "#!/usr/bin/env bash",
-        "",
-        "set -euo pipefail",
-        "",
-        'PROJECT="${1:-ec513}"',
-        "",
-        'SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)',
-        'cd "$SCRIPT_DIR"',
-        "",
-        'command -v qsub >/dev/null 2>&1 || { echo "qsub not found in PATH" >&2; exit 1; }',
-        '[[ -f build_gem5.qsub ]] || { echo "Missing build_gem5.qsub" >&2; exit 1; }',
-        'echo "Submitting build_gem5.qsub first under project $PROJECT..."',
-        'BUILD_JOB_ID=$(qsub -terse -P "$PROJECT" build_gem5.qsub | cut -d. -f1)',
-        '[[ -n "$BUILD_JOB_ID" ]] || { echo "Failed to capture build job id" >&2; exit 1; }',
-        'echo "Build job id: $BUILD_JOB_ID"',
-        "",
-        'echo "Submitting workload jobs with hold_jid=$BUILD_JOB_ID..."',
-    ]
-    for benchmark in BENCHMARKS:
-        lines.append(f'[[ -f {benchmark}.qsub ]] || {{ echo "Missing {benchmark}.qsub" >&2; exit 1; }}')
-        lines.append(f'qsub -P "$PROJECT" -hold_jid "$BUILD_JOB_ID" {benchmark}.qsub')
-    lines.append("")
-    return "\n".join(lines)
-
-
-# Sample: three representative benchmarks that together cover integer, FP, and
-# memory-intensive workloads — good for a quick end-to-end data-collection run.
-SAMPLE_BENCHMARKS = ["505.mcf_r", "500.perlbench_r", "538.imagick_r"]
-
-
-def submit_sample_text() -> str:
-    lines = [
-        "#!/usr/bin/env bash",
-        "",
-        "set -euo pipefail",
-        "",
-        'PROJECT="${1:-ec513}"',
-        "",
-        'SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)',
-        'cd "$SCRIPT_DIR"',
-        "",
-        'command -v qsub >/dev/null 2>&1 || { echo "qsub not found in PATH" >&2; exit 1; }',
-        '[[ -f build_gem5.qsub ]] || { echo "Missing build_gem5.qsub" >&2; exit 1; }',
-        'SAMPLE_JOBS=(' + " ".join(f'"{benchmark}.qsub"' for benchmark in SAMPLE_BENCHMARKS) + ')',
-        'for job in "${SAMPLE_JOBS[@]}"; do',
-        '  [[ -f "$job" ]] || { echo "Missing $job" >&2; exit 1; }',
-        'done',
-        "",
-        'echo "Submitting sample CAMP sweep under project $PROJECT..."',
-        'echo "Benchmarks: ' + ", ".join(SAMPLE_BENCHMARKS) + '"',
-        'BUILD_JOB_ID=$(qsub -terse -P "$PROJECT" build_gem5.qsub | cut -d. -f1)',
-        '[[ -n "$BUILD_JOB_ID" ]] || { echo "Failed to capture build job id" >&2; exit 1; }',
-        'echo "Build job id: $BUILD_JOB_ID"',
-    ]
-    for benchmark in SAMPLE_BENCHMARKS:
-        lines.append(f'qsub -P "$PROJECT" -hold_jid "$BUILD_JOB_ID" {benchmark}.qsub')
-    lines.append("")
-    return "\n".join(lines)
-
-
-def main():
-    jobs_dir = JOBS_DIR
-    logs_dir = jobs_dir / "logs"
+def main() -> None:
+    logs_dir = JOBS_DIR / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
     (logs_dir / ".gitkeep").touch()
 
-    (jobs_dir / "build_gem5.qsub").write_text(build_job_text(), encoding="ascii")
+    job_files = []
+    job_files.extend(emit_localbp_jobs())
+    job_files.extend(emit_camp_jobs())
+    job_files.extend(emit_mlp_jobs())
+    job_files.sort()
 
-    for benchmark in BENCHMARKS:
-        (jobs_dir / f"{benchmark}.qsub").write_text(
-            workload_job_text(benchmark),
-            encoding="ascii",
-        )
-
-    submit_all = jobs_dir / "submit_all.sh"
-    submit_all.write_text(submit_all_text(), encoding="ascii")
-    submit_all.chmod(0o755)
-
-    submit_sample = jobs_dir / "submit_sample.sh"
-    submit_sample.write_text(submit_sample_text(), encoding="ascii")
+    submit_sample = JOBS_DIR / "submit_sample.sh"
+    submit_sample.write_text(submit_sample_text(job_files), encoding="ascii")
     submit_sample.chmod(0o755)
 
-    print(f"Generated {len(BENCHMARKS)} workload qsub files.")
-    print(f"Sample submission covers: {', '.join(SAMPLE_BENCHMARKS)}")
-    print(
-        f"CAMP sweep: cb=[{CAMP_COUNTER_BITS}]  ws=[{CAMP_WINDOW_STATES}]  "
-        f"cts=[{CONFIDENCE_TABLE_SIZES}]"
-    )
+    print(f"Generated {len(job_files)} independent sample qsub files.")
 
 
 if __name__ == "__main__":

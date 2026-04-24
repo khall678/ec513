@@ -1,167 +1,131 @@
-#include "cpu/pred/camp.hh"
+/*EC513 final project (Confidence-Aware Multiperspective Perceptron)
+ * This header defines the CAMP branch predictor. It inherits all the heavy aspects
+ *from the MultiperspectivePerceptron but adds a lightweight Bimodal (2 or 3 bit) state machine
+ *To act as a power-saving filter
+ */
 
-#include <algorithm>
+#include "cpu/pred/camp.hh"
 
 #include "base/intmath.hh"
 #include "base/logging.hh"
+#include "base/trace.hh"
+#include "debug/Fetch.hh"
 
 namespace gem5
 {
+  namespace branch_prediction
+  {
+    //Constructor builds the hardware table
+    CAMP::CAMP(const CAMPParams &params)
+      : MultiperspectivePerceptron8KB(params), // start up the perceptron first
+	filterPredictorSize(params.filter_predictor_size),
+	filterCtrBits(params.filter_ctr_bits),
 
-namespace branch_prediction
-{
+	// Calculate the number of entries we have by dividing total size by counter size
+	filterPredictorSets(params.filter_predictor_size / params.filter_ctr_bits),
 
-namespace
-{
+	// Creating bitmask of 1s to prevent index from going past array bounds
+	indexMask(filterPredictorSets - 1),
 
-unsigned
-sanitizeCounterBits(unsigned counter_bits)
-{
-    return std::clamp(counter_bits, 1U, 8U);
-}
+	// Physically allocate sw array to act as saturating counters
+	confidenceCtrs(filterPredictorSets, SatCounter8(params.filter_ctr_bits))
 
-unsigned
-sanitizeWindowStates(unsigned window_states)
-{
-    return std::max(window_states, 1U);
-}
-
-unsigned
-computeEffectiveWindowStates(unsigned counter_bits, unsigned window_states)
-{
-    const unsigned safe_counter_bits = sanitizeCounterBits(counter_bits);
-    const unsigned safe_window_states = sanitizeWindowStates(window_states);
-    return std::min(safe_window_states, 1U << safe_counter_bits);
-}
-
-} // anonymous namespace
-
-CAMP::CAMP(const CAMPParams &params)
-    : ConditionalPredictor(params),
-      simpleBP(params.simple_bp),
-      complexBP(params.complex_bp),
-      confidenceTableEntries(params.confidenceTableSize),
-      counterBits(sanitizeCounterBits(params.counterBits)),
-      mlpWindowStates(sanitizeWindowStates(params.mlpWindowStates)),
-      effectiveWindowStates(
-          computeEffectiveWindowStates(
-              params.counterBits, params.mlpWindowStates)),
-      confidenceIndexMask(confidenceTableEntries - 1),
-      complexWindowLower(
-          ((1U << counterBits) - effectiveWindowStates + 1) / 2),
-      complexWindowUpper(complexWindowLower + effectiveWindowStates - 1),
-      confidenceCtrs(confidenceTableEntries, SatCounter8(counterBits))
-{
-    if (!isPowerOf2(confidenceTableEntries)) {
-        fatal("CAMP confidenceTableSize must be a power-of-two entry count.\n");
+    {
+      //Make sure table size power of 2 for bitwise math to work
+      if (!isPowerOf2(filterPredictorSize)) {
+	fatal("Invalid CAMP filter predictor size!\n");
+      }
+      if(!isPowerOf2(filterPredictorSets)) {
+	fatal("Invalid number of CAMP filter sets! Check filterCtrBits. \n");
+      }
     }
 
-    if (params.counterBits == 0 || params.counterBits > 8) {
-        fatal("CAMP counterBits must be in the range [1, 8].\n");
+    // Helper function to find the counter
+    inline unsigned
+    CAMP::getFilterIndex(Addr branch_addr)
+    {
+      // Instrs are usually 4 bytes long. Last two bits are always 0. Shift right to throw away these bits
+      // then apply mask to get a safe array index
+      return (branch_addr >> instShiftAmt) & indexMask;
     }
 
-    if (params.mlpWindowStates == 0) {
-        fatal("CAMP mlpWindowStates must be at least 1.\n");
-    }
-}
-
-unsigned
-CAMP::getConfidenceIndex(Addr pc) const
-{
-    return (pc >> instShiftAmt) & confidenceIndexMask;
-}
-
-bool
-CAMP::useComplexPredictor(uint8_t counter_value) const
-{
-    return counter_value >= complexWindowLower &&
-           counter_value <= complexWindowUpper;
-}
-
-bool
-CAMP::lookup(ThreadID tid, Addr pc, void * &bp_history)
-{
-    const unsigned confidence_idx = getConfidenceIndex(pc);
-    const uint8_t counter_value = confidenceCtrs[confidence_idx];
-    const bool use_complex = useComplexPredictor(counter_value);
-
-    void *simple_history = nullptr;
-    void *complex_history = nullptr;
-
-    const bool simple_pred = simpleBP->lookup(tid, pc, simple_history);
-    const bool complex_pred = complexBP->lookup(tid, pc, complex_history);
-
-    auto *history = new BPHistory;
-    history->simpleHistory = simple_history;
-    history->complexHistory = complex_history;
-    history->confidenceIdx = confidence_idx;
-    history->useComplex = use_complex;
-    bp_history = history;
-
-    return use_complex ? complex_pred : simple_pred;
-}
-
-void
-CAMP::updateHistories(ThreadID tid, Addr pc, bool uncond, bool taken,
-                      Addr target, const StaticInstPtr &inst,
-                      void * &bp_history)
-{
-    BPHistory *history = nullptr;
-    if (uncond) {
-        history = new BPHistory;
-        bp_history = history;
-    } else {
-        assert(bp_history);
-        history = static_cast<BPHistory *>(bp_history);
+    // Helper function to read the counter
+    inline bool
+    CAMP::getBimodalPrediction(uint8_t count)
+    {
+      //Only care about MSB. For a 2 bit counter, shifting right by 1 gives us
+      //0 or 1 --> 0 (NT)
+      //2 or 3 --> 1 (T)
+      return (count >>(filterCtrBits -1));
     }
 
-    simpleBP->updateHistories(
-        tid, pc, uncond, taken, target, inst, history->simpleHistory);
-    complexBP->updateHistories(
-        tid, pc, uncond, taken, target, inst, history->complexHistory);
-}
+    //Make the prediction
+    bool
+    CAMP::lookup(ThreadID tid, Addr branch_addr, void * &bp_history)
+    {
+      // First, wWe call the perceptron to safely allocate its memeory
+      // In real hw, this big compute area would have its voltage shut off
+      // In the sumulator, we still call it to prevent memory crashes
 
-void
-CAMP::update(ThreadID tid, Addr pc, bool taken, void * &bp_history,
-             bool squashed, const StaticInstPtr &inst, Addr target)
-{
-    assert(bp_history);
-    auto *history = static_cast<BPHistory *>(bp_history);
+      bool mpp_prediction = MultiperspectivePerceptron8KB::lookup(tid, branch_addr, bp_history);
 
-    simpleBP->update(
-        tid, pc, taken, history->simpleHistory, squashed, inst, target);
-    complexBP->update(
-        tid, pc, taken, history->complexHistory, squashed, inst, target);
+      // Next, look up branch in bimodal table. Take mem address and hash it to find specific count
+      //on SRAM table
+      unsigned filter_idx = getFilterIndex(branch_addr);
+      uint8_t counter_val = confidenceCtrs[filter_idx];
 
-    if (!squashed && inst && inst->isCondCtrl()) {
-        auto &counter = confidenceCtrs[history->confidenceIdx];
-        if (taken) {
-            counter++;
-        } else {
-            counter--;
-        }
+      // Then, Calculate the unconfident middle area dynamically
+      // If filterCtrBits = 2 (Max 3): Middle is 1 and 2
+      // If filterCtrBits = 3 (Max 7): Middle is 2, 3, 4, and 5
+      uint8_t max_val = (1<<filterCtrBits)-1;
+      uint8_t lower_threshold = max_val / 4;
+      uint8_t upper_threshold = max_val - lower_threshold -1;
+
+      bool is_unconfident = (counter_val > lower_threshold) && (counter_val <=upper_threshold);
+
+      // Make routing decision
+      if (is_unconfident) {
+	// Trust perceptron
+	return mpp_prediction;
+      } else {
+	// Save power and use simple Bimodal
+	return getBimodalPrediction(counter_val);
+      }
     }
 
-    if (squashed) {
-        return;
+    // Update weights in commit stage of pipeline
+    void
+    CAMP::update(ThreadID tid, Addr branch_addr, bool taken, void *&bp_history, bool squashed,
+		 const StaticInstPtr & inst, Addr target)
+    {
+      // First, find the counter again to see what state we are in
+      unsigned filter_idx = getFilterIndex(branch_addr);
+
+      // Next, re-calculate if the perceptron was awake during lookup phase
+      uint8_t max_val = (1<<filterCtrBits)-1;
+
+      // Then, Train perceptron only if it was awake and working (now always, taking into account the squashed variable)
+      MultiperspectivePerceptron8KB::update(tid, branch_addr, taken, bp_history, squashed, inst, target);
+
+      // After all of that, handle mis-speculation. If CPU tells us branch should not have happened,
+      // meaning it was executed down a wrong path, we exit here so bimodal does not learn bad data
+      if (squashed) {
+	return;
+      }
+
+      // Train bimodal filter
+      if (taken) {
+	// If branch taken, increment towards max val
+	if (confidenceCtrs[filter_idx] < max_val) {
+	  confidenceCtrs[filter_idx]++;
+	}
+      } else {
+	// If branch not taken, decrement down towards 0
+	if (confidenceCtrs[filter_idx] > 0) {
+	  confidenceCtrs[filter_idx]--;
+	}
+      }
     }
-
-    delete history;
-    bp_history = nullptr;
-}
-
-void
-CAMP::squash(ThreadID tid, void * &bp_history)
-{
-    assert(bp_history);
-    auto *history = static_cast<BPHistory *>(bp_history);
-
-    simpleBP->squash(tid, history->simpleHistory);
-    complexBP->squash(tid, history->complexHistory);
-
-    delete history;
-    bp_history = nullptr;
-}
-
-} // namespace branch_prediction
-} // namespace gem5
+    
+  } // namespace branch_prediction
+} //namespace gem5

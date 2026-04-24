@@ -1,0 +1,27 @@
+#!/bin/bash -l
+#$ -cwd
+#$ -V
+#$ -j y
+#$ -P ec513
+#$ -N camp_505_mcf_r_c3
+#$ -o logs/505_mcf_r.camp_cb3.$JOB_ID.log
+#$ -pe omp 8
+#$ -l h_rt=48:00:00
+
+set -euo pipefail
+
+PROJECT_ROOT="/projectnb/ec513/students/willjdes/labs/spec-2017"
+GEM5_ROOT="/projectnb/ec513/students/willjdes/labs/spec-2017/gem5"
+
+source "$PROJECT_ROOT/sourceme"
+cd "$GEM5_ROOT"
+
+./run_project_benchmark.sh \
+  --benchmarks 505.mcf_r \
+  --warmup-mode timing \
+  --warmup-insts 1000000 \
+  --measure-insts 100000000 \
+  --size ref \
+  --predictors CAMP \
+  --camp-counter-bits 3 \
+  --confidence-table-sizes 8192

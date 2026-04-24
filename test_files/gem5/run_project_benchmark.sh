@@ -68,7 +68,6 @@ Options:
                                     MultiperspectivePerceptron64KB,
                                     MultiperspectivePerceptronTAGE64KB, CAMP
   --camp-counter-bits VALUE       Comma list of CAMP/LocalBP counter sizes
-  --camp-window-states VALUE      Comma list of CAMP confidence-window sizes
   --confidence-table-size VALUE   Single table size in bits (LocalBP/CAMP)
   --confidence-table-sizes VALUE  Comma list of table sizes to sweep (LocalBP/CAMP)
   --warmup-insts VALUE            Warmup instructions before measurement
@@ -220,10 +219,7 @@ while [[ $# -gt 0 ]]; do
             split_csv "$2" CAMP_COUNTER_BITS
             shift 2
             ;;
-        --camp-window-states)
-            split_csv "$2" CAMP_WINDOW_STATES
-            shift 2
-            ;;
+
         # Accept both singular and plural forms; plural takes precedence.
         --confidence-table-size)
             CONFIDENCE_TABLE_SIZES=("$2")
@@ -338,16 +334,13 @@ for benchmark in "${BENCHMARKS[@]}"; do
                 ;;
             CAMP)
                 for counter_bits in "${CAMP_COUNTER_BITS[@]}"; do
-                    for window_states in "${CAMP_WINDOW_STATES[@]}"; do
-                        for table_size in "${CONFIDENCE_TABLE_SIZES[@]}"; do
-                            run_name="CAMP_cb${counter_bits}_ws${window_states}_cts${table_size}"
-                            run_benchmark "$benchmark" "$run_name" \
-                                --predictor CAMP \
-                                --counter-bits "$counter_bits" \
-                                --confidence-table-size "$table_size" \
-                                --mlp-window-states "$window_states" \
-                                --run-tag "$run_name"
-                        done
+                    for table_size in "${CONFIDENCE_TABLE_SIZES[@]}"; do
+                        run_name="CAMP_cb${counter_bits}_cts${table_size}"
+                        run_benchmark "$benchmark" "$run_name" \
+                            --predictor CAMP \
+                            --counter-bits "$counter_bits" \
+                            --confidence-table-size "$table_size" \
+                            --run-tag "$run_name"
                     done
                 done
                 ;;

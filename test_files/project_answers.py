@@ -8,10 +8,9 @@ Five figures are produced:
   fig1_baseline_comparison.png   – mispred rate & CPI: LocalBP / MLP /
                                    LTAGE / MLP-TAGE / CAMP(default)
   fig2_table_size_sweep.png      – CAMP: vary confidenceTableSize
-  fig3_counter_bits_sweep.png    – CAMP: vary counterBits
-  fig4_window_states_sweep.png   – CAMP: vary mlpWindowStates
+  fig3_counter_window_heatmap.png – CAMP: counter bits vs. window states
 
-For sweep figures the other two CAMP axes are held at their defaults
+For sweep figures, unspecified CAMP axes are held at their defaults
 (counterBits=2, mlpWindowStates=2, confidenceTableSize=8192).
 """
 
@@ -378,6 +377,75 @@ _COLORS = [
 ]
 
 
+def get_best_camp_config(df):
+    camp_df = df[df["predictor"] == "CAMP"].copy()
+    if camp_df.empty:
+        return None
+
+    grouped = (
+        camp_df.groupby(
+            ["counter_bits", "window_states", "table_size_bits"], dropna=False
+        )[["mispred_rate_pct", "cpi"]]
+        .mean()
+        .sort_values(["mispred_rate_pct", "cpi"])
+    )
+    if grouped.empty:
+        return None
+
+    counter_bits, window_states, table_size_bits = grouped.index[0]
+    return {
+        "counter_bits": int(counter_bits),
+        "window_states": int(window_states),
+        "table_size_bits": int(table_size_bits),
+    }
+
+
+def format_camp_config(config):
+    if not config:
+        return "unavailable"
+    return (
+        f"cb{config['counter_bits']}/"
+        f"ws{config['window_states']}/"
+        f"cts{config['table_size_bits']}"
+    )
+
+
+def format_predictor_config(predictor, config):
+    if predictor == "CAMP":
+        return format_camp_config(config)
+    if predictor == "LocalBP":
+        if not config:
+            return "unavailable"
+        return f"cb{config['counter_bits']}/cts{config['table_size_bits']}"
+    if predictor == "MultiperspectivePerceptron64KB":
+        return "64K"
+    return "default"
+
+
+def get_best_predictor_config(df, predictor):
+    pred_df = df[df["predictor"] == predictor].copy()
+    if pred_df.empty:
+        return None
+
+    config_cols = ["counter_bits", "window_states", "table_size_bits"]
+    grouped = (
+        pred_df.groupby(config_cols, dropna=False)[["mispred_rate_pct", "cpi"]]
+        .mean()
+        .sort_values(["mispred_rate_pct", "cpi"])
+    )
+    if grouped.empty:
+        return None
+
+    values = grouped.index[0]
+    if not isinstance(values, tuple):
+        values = (values,)
+
+    config = {}
+    for col, value in zip(config_cols, values):
+        config[col] = None if pd.isna(value) else int(value)
+    return config
+
+
 def _style_ax(ax, xlabel="", ylabel="", title=""):
     ax.set_xlabel(xlabel, fontsize=10)
     ax.set_ylabel(ylabel, fontsize=10)
@@ -406,6 +474,85 @@ def grouped_bar(
     ax.set_xticklabels(pivot.index, rotation=40, ha="right", fontsize=8)
 
 
+def _format_sweep_value(value):
+    if pd.isna(value):
+        return ""
+    numeric = float(value)
+    if numeric.is_integer():
+        return str(int(numeric))
+    return f"{numeric:g}"
+
+
+def annotated_heatmap(
+    ax,
+    pivot,
+    title,
+    xlabel="Predictor",
+    ylabel="Benchmark",
+    cmap="YlGnBu",
+    value_fmt="{:.2f}",
+    column_annotations=None,
+    show_values=True,
+    cell_annotations=None,
+):
+    """Draw an annotated heatmap that scales better than dense grouped bars."""
+    pivot = pivot.dropna(how="all").dropna(axis=1, how="all")
+    if pivot.empty:
+        ax.set_visible(False)
+        return None
+
+    plot_data = pivot.astype(float)
+    mask = np.ma.masked_invalid(plot_data.to_numpy())
+    cmap_obj = plt.get_cmap(cmap).copy()
+    cmap_obj.set_bad(color="#f3f3f3")
+
+    image = ax.imshow(mask, aspect="auto", cmap=cmap_obj)
+    ax.set_xticks(np.arange(len(plot_data.columns)))
+    ax.set_xticklabels(plot_data.columns, rotation=30, ha="right", fontsize=8)
+    ax.set_yticks(np.arange(len(plot_data.index)))
+    ax.set_yticklabels(plot_data.index, fontsize=8)
+    ax.set_xlabel(xlabel, fontsize=10)
+    ax.set_ylabel(ylabel, fontsize=10)
+    ax.set_title(title, fontsize=11, fontweight="bold")
+    ax.set_xticks(np.arange(-0.5, len(plot_data.columns), 1), minor=True)
+    ax.set_yticks(np.arange(-0.5, len(plot_data.index), 1), minor=True)
+    ax.grid(which="minor", color="white", linestyle="-", linewidth=1.2)
+    ax.tick_params(which="minor", bottom=False, left=False)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    valid = plot_data.to_numpy()[~np.isnan(plot_data.to_numpy())]
+    midpoint = float(np.nanmedian(valid)) if valid.size else 0.0
+    for row_idx in range(plot_data.shape[0]):
+        for col_idx in range(plot_data.shape[1]):
+            value = plot_data.iat[row_idx, col_idx]
+            if np.isnan(value):
+                continue
+            text_color = "white" if value >= midpoint else "#1f1f1f"
+            annotation = value_fmt.format(value) if show_values else ""
+            extra_label = None
+            if column_annotations:
+                extra_label = column_annotations.get(plot_data.columns[col_idx])
+            if cell_annotations:
+                extra_label = cell_annotations.get(
+                    (plot_data.index[row_idx], plot_data.columns[col_idx]),
+                    extra_label,
+                )
+            if extra_label:
+                annotation = extra_label if not annotation else f"{annotation}\n{extra_label}"
+            ax.text(
+                col_idx,
+                row_idx,
+                annotation,
+                ha="center",
+                va="center",
+                fontsize=6,
+                color=text_color,
+            )
+
+    return image
+
+
 # ---------------------------------------------------------------------------
 # Figure 1 — Baseline comparison (per workload, side-by-side bars)
 # ---------------------------------------------------------------------------
@@ -419,8 +566,9 @@ def _default_camp_label(row):
 
 
 def fig1_baseline_comparison(df, plot_dir):
-    """Mispred rate + CPI per workload for all baseline predictors and
-    the CAMP default configuration."""
+    """Mispred rate + CPI per workload for all baselines and CAMP(default)."""
+
+    best_camp = get_best_camp_config(df)
 
     # Fixed baselines
     baseline_preds = [
@@ -431,14 +579,14 @@ def fig1_baseline_comparison(df, plot_dir):
     base_df = df[df["predictor"].isin(baseline_preds)].copy()
     base_df["label"] = base_df["predictor"].map(BASELINE_LABEL_MAP).fillna(base_df["predictor"])
 
-    # CAMP default config
+    # Best CAMP config
     camp_default = df[
         (df["predictor"] == "CAMP") &
-        (df["counter_bits"]  == DEFAULT_COUNTER_BITS) &
-        (df["window_states"] == DEFAULT_WINDOW_STATES) &
-        (df["table_size_bits"] == DEFAULT_TABLE_SIZE)
+        (df["counter_bits"]  == best_camp["counter_bits"]) &
+        (df["window_states"] == best_camp["window_states"]) &
+        (df["table_size_bits"] == best_camp["table_size_bits"])
     ].copy()
-    camp_default["label"] = "CAMP(def)"
+    camp_default["label"] = "CAMP(best)"
 
     plot_df = pd.concat([base_df, camp_default], ignore_index=True)
     if plot_df.empty:
@@ -446,8 +594,9 @@ def fig1_baseline_comparison(df, plot_dir):
 
     benchmarks = sorted(plot_df["benchmark"].unique())
 
-    fig, axes = plt.subplots(2, 1, figsize=(max(12, len(benchmarks) * 0.9), 9), sharex=False)
+    fig, axes = plt.subplots(2, 1, figsize=(max(11, len(plot_df["label"].unique()) * 1.2), 7.5))
 
+    images = []
     for ax, metric, ylabel in zip(
         axes,
         ["mispred_rate_pct", "cpi"],
@@ -459,15 +608,25 @@ def fig1_baseline_comparison(df, plot_dir):
         ).reindex(benchmarks)
         if pivot.empty or pivot.isna().all(axis=None):
             continue
-        grouped_bar(ax, pivot.dropna(how="all"))
-        _style_ax(ax, ylabel=ylabel)
-        ax.legend(fontsize=8, ncol=min(6, len(pivot.columns)),
-                  loc="upper right", frameon=False)
+        image = annotated_heatmap(
+            ax,
+            pivot,
+            title=f"Baseline Predictor Comparison — {ylabel}",
+            ylabel="Benchmark",
+            value_fmt="{:.2f}",
+        )
+        if image is not None:
+            images.append((ax, image, ylabel))
 
-    axes[0].set_title("Baseline Predictor Comparison — Misprediction Rate", fontsize=12, fontweight="bold")
-    axes[1].set_title("Baseline Predictor Comparison — CPI", fontsize=12, fontweight="bold")
-    axes[1].set_xlabel("Benchmark", fontsize=10)
-    fig.tight_layout(h_pad=3)
+    for ax, image, ylabel in images:
+        fig.colorbar(image, ax=ax, fraction=0.025, pad=0.02, label=ylabel)
+
+    fig.suptitle(
+        f"Best CAMP config shown: {format_camp_config(best_camp)}",
+        fontsize=10,
+        color="dimgray",
+    )
+    fig.tight_layout(rect=[0, 0, 1, 0.96], h_pad=2.2)
     fig.savefig(plot_dir / "fig1_baseline_comparison.png", dpi=180)
     plt.close(fig)
 
@@ -475,27 +634,22 @@ def fig1_baseline_comparison(df, plot_dir):
 def fig0_metrics_dashboard(df, plot_dir):
     """Single concise figure with the four core report metrics."""
 
-    baseline_preds = [
-        "LocalBP", "MultiperspectivePerceptron64KB",
-        "LTAGE", "MultiperspectivePerceptronTAGE64KB",
-        "TournamentBP",
-    ]
-    base_df = df[df["predictor"].isin(baseline_preds)].copy()
-    base_df["label"] = base_df["predictor"].map(BASELINE_LABEL_MAP).fillna(
-        base_df["predictor"]
+    predictor_order = ["LocalBP", "MultiperspectivePerceptron64KB", "CAMP"]
+    plot_df = (
+        df[df["predictor"].isin(predictor_order)]
+        .sort_values(["benchmark", "predictor", "mispred_rate_pct", "cpi"])
+        .groupby(["benchmark", "predictor"], as_index=False)
+        .first()
     )
-
-    camp_default = df[
-        (df["predictor"] == "CAMP") &
-        (df["counter_bits"] == DEFAULT_COUNTER_BITS) &
-        (df["window_states"] == DEFAULT_WINDOW_STATES) &
-        (df["table_size_bits"] == DEFAULT_TABLE_SIZE)
-    ].copy()
-    camp_default["label"] = "CAMP(def)"
-
-    plot_df = pd.concat([base_df, camp_default], ignore_index=True)
     if plot_df.empty:
         return
+    plot_df["label"] = plot_df["predictor"].map(
+        {
+            "LocalBP": "LocalBP",
+            "MultiperspectivePerceptron64KB": "MLP",
+            "CAMP": "CAMP",
+        }
+    )
 
     metric_specs = [
         ("mispred_rate_pct", "Mispred rate (%)"),
@@ -507,45 +661,63 @@ def fig0_metrics_dashboard(df, plot_dir):
         metric_specs[-1] = ("sim_seconds", "Simulated seconds")
 
     benchmarks = sorted(plot_df["benchmark"].unique())
-    fig, axes = plt.subplots(
-        2,
-        2,
-        figsize=(max(13, len(benchmarks) * 1.0), 9),
-        sharex=False,
-    )
+    series_order = ["LocalBP", "MLP", "CAMP"]
+    cell_annotations = {}
+    for _, row in plot_df.iterrows():
+        config = {
+            "counter_bits": row.get("counter_bits"),
+            "window_states": row.get("window_states"),
+            "table_size_bits": row.get("table_size_bits"),
+        }
+        for key, value in list(config.items()):
+            config[key] = None if pd.isna(value) else int(value)
+        cell_annotations[(row["benchmark"], row["label"])] = format_predictor_config(
+            row["predictor"], config
+        )
+    fig, axes = plt.subplots(2, 2, figsize=(13, max(8, len(benchmarks) * 1.9)))
 
+    images = []
     for ax, (metric, ylabel) in zip(axes.flatten(), metric_specs):
         pivot = plot_df.pivot_table(
             index="benchmark",
             columns="label",
             values=metric,
             aggfunc="mean",
-        ).reindex(benchmarks)
+        ).reindex(index=benchmarks, columns=series_order)
 
         if pivot.empty or pivot.isna().all(axis=None):
             ax.set_visible(False)
             continue
 
-        grouped_bar(ax, pivot.dropna(how="all"))
-        _style_ax(ax, ylabel=ylabel)
-
-    legend_handles, legend_labels = axes[0][0].get_legend_handles_labels()
-    if legend_handles:
-        axes[0][0].legend(
-            legend_handles,
-            legend_labels,
-            fontsize=8,
-            ncol=min(6, len(legend_labels)),
-            loc="upper right",
-            frameon=False,
+        image = annotated_heatmap(
+            ax,
+            pivot,
+            title=ylabel,
+            ylabel="Benchmark",
+            value_fmt="{:.2f}",
+            show_values=True,
+            cell_annotations=cell_annotations,
         )
+        if image is not None:
+            images.append((ax, image, ylabel))
+
+    for ax, image, ylabel in images:
+        fig.colorbar(image, ax=ax, fraction=0.03, pad=0.02, label=ylabel)
 
     fig.suptitle(
         "Branch-Predictor Metrics Dashboard",
         fontsize=13,
         fontweight="bold",
     )
-    fig.tight_layout(rect=[0, 0, 1, 0.96], h_pad=3, w_pad=2)
+    fig.text(
+        0.5,
+        0.93,
+        "Tiles show the best available config for each workload/predictor pair.",
+        ha="center",
+        fontsize=9,
+        color="dimgray",
+    )
+    fig.tight_layout(rect=[0, 0, 1, 0.96], h_pad=2.5, w_pad=2)
     fig.savefig(plot_dir / "fig0_metrics_dashboard.png", dpi=180)
     plt.close(fig)
 
@@ -562,8 +734,7 @@ def _camp_sweep_fig(
     title_prefix,
     output_path,
 ):
-    """Bar chart: mispred rate (top) + CPI (bottom) averaged across workloads,
-    as a function of *sweep_col*, with other CAMP params held at *fixed*."""
+    """Trend chart: average sweep response with point labels for each setting."""
 
     mask = pd.Series(True, index=camp_df.index)
     for col, val in fixed.items():
@@ -585,20 +756,36 @@ def _camp_sweep_fig(
         .reindex(sweep_vals)
     )
 
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+    fig, axes = plt.subplots(1, 2, figsize=(10.5, 4.2))
+    x_vals = summary.index.to_numpy(dtype=float)
+    x_labels = [_format_sweep_value(v) for v in summary.index]
 
-    for ax, col, ylabel in zip(
+    for ax, col, ylabel, color in zip(
         axes,
         ["mispred_rate_pct", "cpi"],
         ["Mispred rate (%)", "CPI"],
+        [_COLORS[0], _COLORS[1]],
     ):
-        vals  = summary[col].values
-        xlabs = [str(int(v)) for v in summary.index]
-        colors = _COLORS[: len(xlabs)]
-        bars = ax.bar(xlabs, vals, color=colors, zorder=3, width=0.5)
-        ax.bar_label(bars, fmt="%.2f", fontsize=8, padding=2)
-        _style_ax(ax, xlabel=xlabel, ylabel=ylabel,
-                  title=f"{title_prefix} — {ylabel}")
+        vals = summary[col].to_numpy(dtype=float)
+        ax.plot(x_vals, vals, color=color, marker="o", linewidth=2.2, markersize=6, zorder=3)
+        ax.fill_between(x_vals, vals, color=color, alpha=0.12, zorder=2)
+        for x, y in zip(x_vals, vals):
+            ax.annotate(
+                f"{y:.2f}",
+                xy=(x, y),
+                xytext=(0, 7),
+                textcoords="offset points",
+                ha="center",
+                fontsize=8,
+            )
+        ax.set_xticks(x_vals)
+        ax.set_xticklabels(x_labels)
+        _style_ax(
+            ax,
+            xlabel=xlabel,
+            ylabel=ylabel,
+            title=f"{title_prefix} — {ylabel}",
+        )
 
     # Annotate fixed params
     fixed_str = "  |  ".join(f"{k}={v}" for k, v in fixed.items())
@@ -619,26 +806,47 @@ def fig2_table_size_sweep(camp_df, plot_dir):
     )
 
 
-def fig3_counter_bits_sweep(camp_df, plot_dir):
-    _camp_sweep_fig(
-        camp_df,
-        sweep_col="counter_bits",
-        fixed={"window_states": DEFAULT_WINDOW_STATES, "table_size_bits": DEFAULT_TABLE_SIZE},
+def fig3_counter_window_heatmap(camp_df, plot_dir):
+    data = camp_df[camp_df["table_size_bits"] == DEFAULT_TABLE_SIZE].copy()
+    if data.empty:
+        return
+
+    data["counter_bits"] = pd.to_numeric(data["counter_bits"], errors="coerce")
+    data["window_states"] = pd.to_numeric(data["window_states"], errors="coerce")
+    data = data.dropna(subset=["counter_bits", "window_states", "mispred_rate_pct"])
+    if data.empty:
+        return
+
+    counter_vals = sorted(data["counter_bits"].unique())
+    window_vals = sorted(data["window_states"].unique())
+    pivot = data.pivot_table(
+        index="window_states",
+        columns="counter_bits",
+        values="mispred_rate_pct",
+        aggfunc="mean",
+    ).reindex(index=window_vals, columns=counter_vals)
+
+    fig, ax = plt.subplots(figsize=(7, 4.8))
+    image = annotated_heatmap(
+        ax,
+        pivot,
+        title="CAMP: Counter Bits vs. Window States — Mispred rate (%)",
         xlabel="Saturating counter bits",
-        title_prefix="CAMP: Vary Saturating Counter Size",
-        output_path=plot_dir / "fig3_counter_bits_sweep.png",
+        ylabel="MLP window states",
+        value_fmt="{:.2f}",
+        show_values=True,
     )
+    if image is not None:
+        fig.colorbar(image, ax=ax, fraction=0.035, pad=0.03, label="Mispred rate (%)")
 
-
-def fig4_window_states_sweep(camp_df, plot_dir):
-    _camp_sweep_fig(
-        camp_df,
-        sweep_col="window_states",
-        fixed={"counter_bits": DEFAULT_COUNTER_BITS, "table_size_bits": DEFAULT_TABLE_SIZE},
-        xlabel="MLP window states",
-        title_prefix="CAMP: Vary Middle Window Size",
-        output_path=plot_dir / "fig4_window_states_sweep.png",
+    fig.suptitle(
+        f"Fixed table_size_bits={DEFAULT_TABLE_SIZE}",
+        fontsize=9,
+        color="dimgray",
     )
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    fig.savefig(plot_dir / "fig3_counter_window_heatmap.png", dpi=180)
+    plt.close(fig)
 
 
 # ---------------------------------------------------------------------------
@@ -664,6 +872,7 @@ def main():
         plot_dir / "fig0_metrics_dashboard.png",
         plot_dir / "fig1_baseline_comparison.png",
         plot_dir / "fig2_table_size_sweep.png",
+        plot_dir / "fig3_counter_window_heatmap.png",
         plot_dir / "fig3_counter_bits_sweep.png",
         plot_dir / "fig4_window_states_sweep.png",
     ]
@@ -674,8 +883,7 @@ def main():
     fig0_metrics_dashboard(df, plot_dir)
     fig1_baseline_comparison(df, plot_dir)
     fig2_table_size_sweep(camp_df, plot_dir)
-    fig3_counter_bits_sweep(camp_df, plot_dir)
-    fig4_window_states_sweep(camp_df, plot_dir)
+    fig3_counter_window_heatmap(camp_df, plot_dir)
 
     print(f"Plots written to {plot_dir}/")
     for output_path in output_paths:

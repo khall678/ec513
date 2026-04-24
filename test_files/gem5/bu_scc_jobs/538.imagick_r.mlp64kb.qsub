@@ -1,0 +1,25 @@
+#!/bin/bash -l
+#$ -cwd
+#$ -V
+#$ -j y
+#$ -P ec513
+#$ -N mlp_538_imagick_r
+#$ -o logs/538_imagick_r.mlp64kb.$JOB_ID.log
+#$ -pe omp 8
+#$ -l h_rt=48:00:00
+
+set -euo pipefail
+
+PROJECT_ROOT="/projectnb/ec513/students/willjdes/labs/spec-2017"
+GEM5_ROOT="/projectnb/ec513/students/willjdes/labs/spec-2017/gem5"
+
+source "$PROJECT_ROOT/sourceme"
+cd "$GEM5_ROOT"
+
+./run_project_benchmark.sh \
+  --benchmarks 538.imagick_r \
+  --warmup-mode timing \
+  --warmup-insts 1000000 \
+  --measure-insts 100000000 \
+  --size ref \
+  --predictors MultiperspectivePerceptron64KB

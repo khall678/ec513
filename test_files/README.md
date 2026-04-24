@@ -48,7 +48,8 @@ tree:
 
 - `gem5/src/cpu/pred/camp.cc`
 - `gem5/src/cpu/pred/camp.hh`
-- `gem5/src/cpu/pred/CAMP_predictor.py`
+- `gem5/src/cpu/pred/BranchPredictor.py`
+- `gem5/src/cpu/pred/SConscript`
 - `gem5/ec513_custom/simulate_CAMP.py`
 - `gem5/run_project_benchmark.sh`
 - everything in `gem5/bu_scc_jobs/`
@@ -73,8 +74,10 @@ the project.
   Main CAMP predictor implementation.
 - `gem5/src/cpu/pred/camp.hh`
   CAMP predictor declarations and class interface.
-- `gem5/src/cpu/pred/CAMP_predictor.py`
-  gem5 SimObject definition that exposes CAMP to Python configs.
+- `gem5/src/cpu/pred/BranchPredictor.py`
+  gem5 SimObject definition that exposes predictors (including CAMP) to Python configs.
+- `gem5/src/cpu/pred/SConscript`
+  gem5 build script for predictor implementations.
 
 ### Simulation driver
 

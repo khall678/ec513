@@ -1,0 +1,34 @@
+Starting 505.mcf_r -> LocalBP_cb3_cts8192
+warn: Base 10 memory/cache size 3GB will be cast to base 2 size 3GiB.
+warn: Output directory already exists: /projectnb/ec513/students/willjdes/labs/spec-2017/gem5/m5out/505.mcf_r/LocalBP_cb3_cts8192/camp_505_mcf_r_LocalBP_LocalBP_cb3_cts8192
+warn: `Resource` has been deprecated. Please use the `obtain_resource` function instead.
+warn: Resource x86-linux-kernel-4.19.83 is not compatible with gem5 version 25.1.0.0.
+warn: Resource x86-linux-kernel-4.19.83 is not compatible with gem5 version 25.1.0.0.
+gem5 Simulator System.  https://www.gem5.org
+gem5 is copyrighted software; use the --copyright option for details.
+
+gem5 version 25.1.0.0
+gem5 compiled Apr 19 2026 16:08:16
+gem5 started Apr 19 2026 16:26:11
+gem5 executing on scc-ya3, pid 917696
+command line: /projectnb/ec513/students/willjdes/labs/spec-2017/gem5/build/X86/gem5.opt -d /projectnb/ec513/students/willjdes/labs/spec-2017/gem5/m5out/505.mcf_r/LocalBP_cb3_cts8192 ec513_custom/simulate_CAMP.py --image /projectnb/ec513/students/willjdes/labs/spec-2017/disk-image/spec-2017/spec-2017-image/spec-2017 --partition 1 --benchmark 505.mcf_r --size ref --warmup-insts 1000000 --warmup-mode timing --measure-insts 100000000 --predictor LocalBP --counter-bits 3 --confidence-table-size 8192 --run-tag LocalBP_cb3_cts8192
+
+info: Standard input is not a terminal, disabling listeners.
+info: Using default config
+CPUs: [<gem5.components.processors.simple_core.SimpleCore object at 0x14bc94970710>, <gem5.components.processors.simple_core.SimpleCore object at 0x14bc94970f80>]
+Running the simulation
+Using KVM for boot, TimingSimpleCPU for warmup, then O3 for detailed measurement
+warn: Base 10 memory/cache size 16kB will be cast to base 2 size 16KiB.
+warn: Base 10 memory/cache size 16kB will be cast to base 2 size 16KiB.
+warn: Base 10 memory/cache size 16kB will be cast to base 2 size 16KiB.
+warn: Base 10 memory/cache size 16kB will be cast to base 2 size 16KiB.
+warn: Base 10 memory/cache size 1MB will be cast to base 2 size 1MiB.
+warn: Base 10 memory/cache size 1MB will be cast to base 2 size 1MiB.
+Global frequency set at 1000000000000 ticks per second
+warn: board.workload.acpi_description_table_pointer.rsdt adopting orphan SimObject param 'entries'
+src/mem/dram_interface.cc:690: warn: DRAM device capacity (16384 Mbytes) does not match the address range assigned (2048 Mbytes)
+src/mem/dram_interface.cc:690: warn: DRAM device capacity (16384 Mbytes) does not match the address range assigned (2048 Mbytes)
+src/sim/kernel_workload.cc:46: info: kernel located at: /usr4/ec580/willjdes/.cache/gem5/x86-linux-kernel-4.19.83-1.0.0
+mmap: Cannot allocate memory
+src/mem/physical.cc:247: fatal: Could not mmap 3221225472 bytes for range [0:0xc0000000]!
+Memory Usage: 374848 KBytes

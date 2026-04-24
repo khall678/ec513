@@ -188,12 +188,6 @@ def parse_args():
         help="Bits per LocalBP or CAMP saturating counter.",
     )
     parser.add_argument(
-        "--mlp-window-states",
-        type=int,
-        default=2,
-        help="Number of centered confidence states that delegate to the MLP.",
-    )
-    parser.add_argument(
         "--run-tag",
         type=str,
         default="",
@@ -224,9 +218,6 @@ def validate_args(args):
     if args.counter_bits <= 0 or args.counter_bits > 8:
         fatal("--counter-bits must be in the range [1, 8].\n")
 
-    if args.mlp_window_states <= 0:
-        fatal("--mlp-window-states must be positive.\n")
-
 
 def build_predictor(args):
     if args.predictor == "LocalBP":
@@ -254,20 +245,13 @@ def build_predictor(args):
         settings = {"predictor": args.predictor}
     elif args.predictor == "CAMP":
         cond_bp = CAMP(
-            confidenceTableSize=args.confidence_table_size,
-            counterBits=args.counter_bits,
-            mlpWindowStates=args.mlp_window_states,
-            simple_bp=LocalBP(
-                localPredictorSize=args.confidence_table_size,
-                localCtrBits=args.counter_bits,
-            ),
+            filter_predictor_size=args.confidence_table_size,
+            filter_ctr_bits=args.counter_bits,
         )
         settings = {
             "predictor": args.predictor,
-            "confidence_table_entries": args.confidence_table_size,
-            "confidence_table_size_bits": args.confidence_table_size,
-            "counter_bits": args.counter_bits,
-            "mlp_window_states": args.mlp_window_states,
+            "filter_predictor_size": args.confidence_table_size,
+            "filter_ctr_bits": args.counter_bits,
         }
     else:
         fatal(f"Unsupported predictor: {args.predictor}")
@@ -294,10 +278,8 @@ def predictor_settings_from_args(args):
     if args.predictor == "CAMP":
         return {
             "predictor": args.predictor,
-            "confidence_table_entries": args.confidence_table_size,
-            "confidence_table_size_bits": args.confidence_table_size,
-            "counter_bits": args.counter_bits,
-            "mlp_window_states": args.mlp_window_states,
+            "filter_predictor_size": args.confidence_table_size,
+            "filter_ctr_bits": args.counter_bits,
         }
     fatal(f"Unsupported predictor: {args.predictor}")
 

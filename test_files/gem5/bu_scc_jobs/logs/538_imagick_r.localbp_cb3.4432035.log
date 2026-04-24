@@ -1,0 +1,39 @@
+Starting 538.imagick_r -> LocalBP_cb3_cts8192
+warn: Base 10 memory/cache size 3GB will be cast to base 2 size 3GiB.
+warn: Output directory already exists: /projectnb/ec513/students/willjdes/labs/spec-2017/gem5/m5out/538.imagick_r/LocalBP_cb3_cts8192/camp_538_imagick_r_LocalBP_LocalBP_cb3_cts8192
+warn: `Resource` has been deprecated. Please use the `obtain_resource` function instead.
+warn: Resource x86-linux-kernel-4.19.83 is not compatible with gem5 version 25.1.0.0.
+warn: Resource x86-linux-kernel-4.19.83 is not compatible with gem5 version 25.1.0.0.
+gem5 Simulator System.  https://www.gem5.org
+gem5 is copyrighted software; use the --copyright option for details.
+
+gem5 version 25.1.0.0
+gem5 compiled Apr 19 2026 16:08:16
+gem5 started Apr 19 2026 16:26:55
+gem5 executing on scc-b15, pid 39947
+command line: /projectnb/ec513/students/willjdes/labs/spec-2017/gem5/build/X86/gem5.opt -d /projectnb/ec513/students/willjdes/labs/spec-2017/gem5/m5out/538.imagick_r/LocalBP_cb3_cts8192 ec513_custom/simulate_CAMP.py --image /projectnb/ec513/students/willjdes/labs/spec-2017/disk-image/spec-2017/spec-2017-image/spec-2017 --partition 1 --benchmark 538.imagick_r --size ref --warmup-insts 1000000 --warmup-mode timing --measure-insts 100000000 --predictor LocalBP --counter-bits 3 --confidence-table-size 8192 --run-tag LocalBP_cb3_cts8192
+
+info: Standard input is not a terminal, disabling listeners.
+info: Using default config
+CPUs: [<gem5.components.processors.simple_core.SimpleCore object at 0x15440b440cb0>, <gem5.components.processors.simple_core.SimpleCore object at 0x15440bf50200>]
+Running the simulation
+Using KVM for boot, TimingSimpleCPU for warmup, then O3 for detailed measurement
+warn: Base 10 memory/cache size 16kB will be cast to base 2 size 16KiB.
+warn: Base 10 memory/cache size 16kB will be cast to base 2 size 16KiB.
+warn: Base 10 memory/cache size 16kB will be cast to base 2 size 16KiB.
+warn: Base 10 memory/cache size 16kB will be cast to base 2 size 16KiB.
+warn: Base 10 memory/cache size 1MB will be cast to base 2 size 1MiB.
+warn: Base 10 memory/cache size 1MB will be cast to base 2 size 1MiB.
+Global frequency set at 1000000000000 ticks per second
+warn: board.workload.acpi_description_table_pointer.rsdt adopting orphan SimObject param 'entries'
+src/mem/dram_interface.cc:690: warn: DRAM device capacity (16384 Mbytes) does not match the address range assigned (2048 Mbytes)
+src/mem/dram_interface.cc:690: warn: DRAM device capacity (16384 Mbytes) does not match the address range assigned (2048 Mbytes)
+src/sim/kernel_workload.cc:46: info: kernel located at: /usr4/ec580/willjdes/.cache/gem5/x86-linux-kernel-4.19.83-1.0.0
+src/base/statistics.hh:279: warn: One of the stats is a legacy stat. Legacy stat is a stat that does not belong to any statistics::Group. Legacy stat is deprecated.
+      0: board.pc.south_bridge.cmos.rtc: Real-time clock set to Sun Jan  1 00:00:00 2012
+src/dev/serial/terminal.cc:174: warn: Sockets disabled, not accepting terminal connections
+src/base/statistics.hh:279: warn: One of the stats is a legacy stat. Legacy stat is a stat that does not belong to any statistics::Group. Legacy stat is deprecated.
+src/cpu/kvm/base.cc:113: info: Using KVM CPU without perf. The stats related to the number of cycles and instructions executed by the KVM CPU will not be updated. The stats should not be used for performance evaluation.
+src/cpu/kvm/base.cc:113: info: Using KVM CPU without perf. The stats related to the number of cycles and instructions executed by the KVM CPU will not be updated. The stats should not be used for performance evaluation.
+src/cpu/pred/2bit_local.cc:67: fatal: Invalid number of local predictor sets! Check localCtrBits.
+Memory Usage: 3520576 KBytes
